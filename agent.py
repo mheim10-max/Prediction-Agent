@@ -1,4 +1,3 @@
-cat > agent.py << 'EOF'
 import requests
 import os
 import csv
@@ -27,7 +26,6 @@ PROBABILITY: [your estimated 0-100]
 EDGE: [your probability minus {market_odds}]
 RECOMMENDATION: [BET_YES or BET_NO or SKIP]
 REASON: [one sentence]"""
-
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=150,
@@ -72,19 +70,15 @@ def main():
     print("Fetching markets from Kalshi...")
     markets = get_kalshi_markets()
     actionable = 0
-
     for market in markets:
         title = clean_title(market.get("title", "Unknown"))
         odds = market.get("yes_ask", 50)
-
         response = analyze_market(title, odds)
         analysis = parse_response(response)
         edge = analysis.get("edge", 0) or 0
         recommendation = analysis.get("recommendation", "SKIP")
-
         if recommendation == "SKIP" or abs(edge) < 10:
             continue
-
         actionable += 1
         print("\n==================================================")
         print(f"Market: {title}")
@@ -94,12 +88,10 @@ def main():
         print(f"Recommendation: {recommendation}")
         print(f"Reason: {analysis.get('reason')}")
         log_result(title, odds, analysis)
-
     if actionable == 0:
-        print("\nNo actionable bets found in current markets.")
+        print("\nNo actionable bets found.")
     else:
         print(f"\n{actionable} actionable bets logged to results.csv")
 
 if __name__ == "__main__":
     main()
-EOF
