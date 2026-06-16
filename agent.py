@@ -1,4 +1,4 @@
-cat > agent.py << 'EOF'
+cat >> agent.py << 'EOF'
 import requests
 import os
 import csv
