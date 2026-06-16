@@ -8,15 +8,48 @@ from dotenv import load_dotenv
 load_dotenv()
 client = Anthropic()
 
-def get_kalshi_markets():
-    url = "https://api.elections.kalshi.com/trade-api/v2/markets"
-    params = {"limit": 20, "status": "open"}
-    response = requests.get(url, params=params)
-    return response.json().get("markets", [])
+BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
 
-def clean_title(title):
-    words = title.split(",")
-    return words[0].replace("yes ", "").replace("no ", "").strip()
+WEATHER_SERIES = [
+    "KXHIGHNY", "KXHIGHMIA", "KXHIGHCHI", "KXHIGHLA",
+    "KXHIGHDFW", "KXHIGHHOU", "KXHIGHPHX", "KXHIGHSEA",
+    "KXHIGHATL", "KXHIGHBOS", "KXRAINAUS", "KXRAINNYC",
+    "KXRAINCHI", "KXRAINLA", "KXRAINMIA"
+]
+
+def get_weather_markets():
+    all_markets = []
+    seen = set()
+    for series in WEATHER_SERIES:
+        try:
+            url = f"{BASE_URL}/markets?series_ticker={series}&status=open&limit=20"
+            response = requests.get(url)
+            markets = response.json().get("markets", [])
+            for m in markets:
+                ticker = m.get("ticker", "")
+                if ticker not in seen:
+                    seen.add(ticker)
+                    all_markets.append(m)
+        except:
+            continue
+    return all_markets
+
+def get_event_title(event_ticker):
+    try:
+        url = f"{BASE_URL}/events/{event_ticker}"
+        response = requests.get(url)
+        event = response.json().get("event", {})
+        return event.get("title", "")
+    except:
+        return ""
+
+def get_full_title(market):
+    event_ticker = market.get("event_ticker", "")
+    subtitle = market.get("subtitle", "")
+    event_title = get_event_title(event_ticker)
+    if event_title and subtitle:
+        return f"{event_title} - {subtitle}"
+    return event_title or subtitle or market.get("title", "Unknown")
 
 def analyze_market(title, market_odds):
     prompt = f"""Prediction market: "{title}"
@@ -67,12 +100,20 @@ def log_result(title, odds, analysis):
         ])
 
 def main():
-    print("Fetching markets from Kalshi...")
-    markets = get_kalshi_markets()
+    print("Fetching weather markets from Kalshi...")
+    markets = get_weather_markets()
+    print(f"Found {len(markets)} weather markets to analyze")
+
+    if len(markets) == 0:
+        print("No markets found. Check your internet connection.")
+        return
+
     actionable = 0
     for market in markets:
-        title = clean_title(market.get("title", "Unknown"))
+        title = get_full_title(market)
         odds = market.get("yes_ask", 50)
+        if odds == 0 or not title:
+            continue
         response = analyze_market(title, odds)
         analysis = parse_response(response)
         edge = analysis.get("edge", 0) or 0
@@ -88,8 +129,9 @@ def main():
         print(f"Recommendation: {recommendation}")
         print(f"Reason: {analysis.get('reason')}")
         log_result(title, odds, analysis)
+
     if actionable == 0:
-        print("\nNo actionable bets found.")
+        print("\nNo actionable weather bets found today.")
     else:
         print(f"\n{actionable} actionable bets logged to results.csv")
 
