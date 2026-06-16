@@ -1,4 +1,3 @@
-cat > agent.py << 'EOF'
 import requests
 import os
 import csv
@@ -9,15 +8,29 @@ from dotenv import load_dotenv
 load_dotenv()
 client = Anthropic()
 
+CLIMATE_KEYWORDS = [
+    "climate", "temperature", "hurricane", "wildfire",
+    "flood", "drought", "emissions", "carbon", "storm",
+    "rainfall", "sea level", "tornado", "heat wave",
+    "renewable", "solar", "wind energy", "glacier"
+]
+
 def get_kalshi_markets():
     url = "https://api.elections.kalshi.com/trade-api/v2/markets"
-    params = {"limit": 20, "status": "open"}
+    params = {"limit": 100, "status": "open"}
     response = requests.get(url, params=params)
     return response.json().get("markets", [])
 
-def clean_title(title):
-    words = title.split(",")
-    return words[0].replace("yes ", "").replace("no ", "").strip()
+def is_climate_market(title):
+    title_lower = title.lower()
+    return any(keyword in title_lower for keyword in CLIMATE_KEYWORDS)
+
+def get_full_title(market):
+    title = market.get("title", "")
+    subtitle = market.get("subtitle", "")
+    if subtitle:
+        return f"{title} - {subtitle}"
+    return title
 
 def analyze_market(title, market_odds):
     prompt = f"""Prediction market: "{title}"
@@ -27,7 +40,6 @@ PROBABILITY: [your estimated 0-100]
 EDGE: [your probability minus {market_odds}]
 RECOMMENDATION: [BET_YES or BET_NO or SKIP]
 REASON: [one sentence]"""
-
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=150,
@@ -71,20 +83,29 @@ def log_result(title, odds, analysis):
 def main():
     print("Fetching markets from Kalshi...")
     markets = get_kalshi_markets()
-    actionable = 0
 
+    climate_markets = []
     for market in markets:
-        title = clean_title(market.get("title", "Unknown"))
-        odds = market.get("yes_ask", 50)
+        title = get_full_title(market)
+        if is_climate_market(title):
+            climate_markets.append((title, market))
 
+    print(f"Found {len(climate_markets)} climate-related markets")
+
+    if len(climate_markets) == 0:
+        print("No climate markets found. Try running again later.")
+        print("Showing all markets instead...")
+        climate_markets = [(get_full_title(m), m) for m in markets[:10]]
+
+    actionable = 0
+    for title, market in climate_markets:
+        odds = market.get("yes_ask", 50)
         response = analyze_market(title, odds)
         analysis = parse_response(response)
         edge = analysis.get("edge", 0) or 0
         recommendation = analysis.get("recommendation", "SKIP")
-
         if recommendation == "SKIP" or abs(edge) < 10:
             continue
-
         actionable += 1
         print("\n==================================================")
         print(f"Market: {title}")
@@ -96,10 +117,9 @@ def main():
         log_result(title, odds, analysis)
 
     if actionable == 0:
-        print("\nNo actionable bets found in current markets.")
+        print("\nNo actionable climate bets found today.")
     else:
         print(f"\n{actionable} actionable bets logged to results.csv")
 
 if __name__ == "__main__":
     main()
-EOF
